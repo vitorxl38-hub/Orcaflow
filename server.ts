@@ -24,9 +24,9 @@ const db = {
     { id: "usr-3", email: "tecnico.joao@orcaflow.com", name: "João Pedro", password: "joao123", role: "MEMBER", isSuperAdmin: false, plan: "FREE" }
   ],
   workspaces: [
-    { id: "ws-1", name: "Solares Soluções Elétricas", niche: "Eletricista & Automação", phone: "(11) 98765-4321", email: "contato@solaresenergia.com.br", address: "Av. Paulista, 1000 - Bela Vista, São Paulo - SP", logoUrl: "", brandColor: "#eab308", pixKey: "financeiro@solaresenergia.com.br", ownerId: "usr-1" },
-    { id: "ws-2", name: "Pixel Studio Design", niche: "Design & Agência Digital", phone: "(21) 99887-7665", email: "ola@pixelstudio.design", address: "Rua Visconde de Pirajá, 350 - Ipanema, Rio de Janeiro - RJ", logoUrl: "", brandColor: "#6366f1", pixKey: "pix@pixelstudio.design", ownerId: "usr-1" },
-  ],
+    { id: "ws-1", name: "Solares Soluções Elétricas", niche: "Eletricista & Automação", phone: "(11) 98765-4321", email: "contato@solaresenergia.com.br", address: "Av. Paulista, 1000 - Bela Vista, São Paulo - SP", logoUrl: "", brandColor: "#eab308", pixKey: "financeiro@solaresenergia.com.br", ownerId: "usr-1", cnpj: "27.508.312/0001-44" },
+    { id: "ws-2", name: "Pixel Studio Design", niche: "Design & Agência Digital", phone: "(21) 99887-7665", email: "ola@pixelstudio.design", address: "Rua Visconde de Pirajá, 350 - Ipanema, Rio de Janeiro - RJ", logoUrl: "", brandColor: "#6366f1", pixKey: "pix@pixelstudio.design", ownerId: "usr-1", cnpj: "" },
+  ] as any[],
   workspaceMembers: [
     { id: "mem-1", workspaceId: "ws-1", userId: "usr-1", role: "OWNER", name: "Vítor Mendes", email: "vitorxl38@gmail.com" },
     { id: "mem-2", workspaceId: "ws-1", userId: "usr-2", role: "ADMIN", name: "Carla Souza", email: "carla.gerente@orcaflow.com" },
@@ -135,12 +135,12 @@ const db = {
     }
   ],
   services: [
-    { id: "srv-1", workspaceId: "ws-1", description: "Instalação Completa de Chuveiro Elétrico de Alta Potência", unitPrice: 180 },
-    { id: "srv-2", workspaceId: "ws-1", description: "Substituição preventiva de disjuntor geral de segurança", unitPrice: 240 },
-    { id: "srv-3", workspaceId: "ws-1", description: "Mapeamento elétrico termográfico preventivo", unitPrice: 450 },
-    { id: "srv-4", workspaceId: "ws-2", description: "Design de Logotipo Vetorial e Identidade Cromática", unitPrice: 1500 },
-    { id: "srv-5", workspaceId: "ws-2", description: "Design de Interface UI Figma de Tela Otimizada", unitPrice: 500 }
-  ],
+    { id: "srv-1", workspaceId: "ws-1", description: "Instalação Completa de Chuveiro Elétrico de Alta Potência", unitPrice: 180, category: "Serviço", code: "", obs: "" },
+    { id: "srv-2", workspaceId: "ws-1", description: "Substituição preventiva de disjuntor geral de segurança", unitPrice: 240, category: "Serviço", code: "", obs: "" },
+    { id: "srv-3", workspaceId: "ws-1", description: "Mapeamento elétrico termográfico preventivo", unitPrice: 450, category: "Serviço", code: "", obs: "" },
+    { id: "srv-4", workspaceId: "ws-2", description: "Design de Logotipo Vetorial e Identidade Cromática", unitPrice: 1500, category: "Serviço", code: "", obs: "" },
+    { id: "srv-5", workspaceId: "ws-2", description: "Design de Interface UI Figma de Tela Otimizada", unitPrice: 500, category: "Serviço", code: "", obs: "" }
+  ] as any[],
   subscriptions: [
     { id: "sub-1", userId: "usr-1", plan: "BUSINESS", status: "ACTIVE", nextBilling: "2026-06-28" }
   ],
@@ -378,6 +378,12 @@ app.get("/api/auth/me", (req, res) => {
   });
 });
 
+app.post("/api/auth/logout", (req, res) => {
+  currentUser = null;
+  currentWorkspace = null;
+  res.json({ success: true });
+});
+
 // Workspaces / Multi-empresa APIs
 app.get("/api/workspaces", (req, res) => {
   if (!currentUser) {
@@ -395,7 +401,7 @@ app.post("/api/workspaces", (req, res) => {
   if (!currentUser) {
     return res.status(401).json({ error: "Sessão expirada. Faça login novamente." });
   }
-  const { name, niche, phone, email, address, brandColor, pixKey } = req.body;
+  const { name, niche, phone, email, address, brandColor, pixKey, cnpj, logoUrl, initialServiceName, initialServicePrice } = req.body;
   if (!name || !niche) {
     return res.status(400).json({ error: "Nome e nicho são obrigatórios" });
   }
@@ -407,7 +413,8 @@ app.post("/api/workspaces", (req, res) => {
     phone: phone || "",
     email: email || "",
     address: address || "",
-    logoUrl: "",
+    cnpj: cnpj || "",
+    logoUrl: logoUrl || "",
     brandColor: brandColor || "#3b82f6",
     pixKey: pixKey || "",
     ownerId: currentUser.id
@@ -423,13 +430,27 @@ app.post("/api/workspaces", (req, res) => {
     email: currentUser.email
   });
 
+  // Seeding initial service if requested
+  if (initialServiceName) {
+    db.services.push({
+      id: `svc-${Date.now()}`,
+      workspaceId: newWs.id,
+      description: initialServiceName,
+      unitPrice: typeof initialServicePrice === "number" ? initialServicePrice : parseFloat(initialServicePrice) || 150,
+      category: niche || "Serviço",
+      code: "INI",
+      obs: "Serviço principal de atuação comercial."
+    });
+  }
+
+  saveDb();
   currentWorkspace = newWs;
   res.status(201).json(newWs);
 });
 
 app.put("/api/workspaces/:id", (req, res) => {
   const { id } = req.params;
-  const { name, niche, phone, email, address, logoUrl, brandColor, pixKey } = req.body;
+  const { name, niche, phone, email, address, logoUrl, brandColor, pixKey, cnpj } = req.body;
 
   const idx = db.workspaces.findIndex(w => w.id === id);
   if (idx === -1) {
@@ -443,6 +464,7 @@ app.put("/api/workspaces/:id", (req, res) => {
     phone: phone !== undefined ? phone : db.workspaces[idx].phone,
     email: email !== undefined ? email : db.workspaces[idx].email,
     address: address !== undefined ? address : db.workspaces[idx].address,
+    cnpj: cnpj !== undefined ? cnpj : db.workspaces[idx].cnpj,
     logoUrl: logoUrl !== undefined ? logoUrl : db.workspaces[idx].logoUrl,
     brandColor: brandColor !== undefined ? brandColor : db.workspaces[idx].brandColor,
     pixKey: pixKey !== undefined ? pixKey : db.workspaces[idx].pixKey,
@@ -452,6 +474,7 @@ app.put("/api/workspaces/:id", (req, res) => {
     currentWorkspace = db.workspaces[idx];
   }
 
+  saveDb();
   res.json(db.workspaces[idx]);
 });
 

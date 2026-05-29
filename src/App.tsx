@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Sparkles, FileText, CheckCircle2, AlertCircle, TrendingUp, Users, Settings,
   CreditCard, ShieldAlert, Phone, HelpCircle, Share2, Copy, Download, Trash2,
-  Plus, Play, Check, Send, Coins, LogIn, ChevronRight, CheckCircle, RefreshCw,
+  Plus, Play, Check, Send, Coins, LogIn, LogOut, ChevronRight, CheckCircle, RefreshCw,
   Layers, Palette, Briefcase, UserPlus, KeyRound, ShieldCheck
 } from 'lucide-react';
 import { AIPanel } from './components/AIPanel';
@@ -14,6 +14,43 @@ import {
 
 import { PlanType, UserRole, BudgetStatus, User, Workspace, BudgetItem, Budget, MetricSummary, SaaSAdminData, CatalogService } from './types';
 
+const formatCNPJ = (val: string) => {
+  const digits = val.replace(/\D/g, '').slice(0, 14);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 5) return digits.replace(/^(\d{2})(\d)/, '$1.$2');
+  if (digits.length <= 8) return digits.replace(/^(\d{2})(\d{3})(\d)/, '$1.$2.$3');
+  if (digits.length <= 12) return digits.replace(/^(\d{2})(\d{3})(\d{3})(\d)/, '$1.$2.$3/$4');
+  return digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d)/, '$1.$2.$3/$4-$5');
+};
+
+const handleLogoLocalUpload = (
+  e: React.ChangeEvent<HTMLInputElement>,
+  callback: (base64Url: string) => void,
+  notify: (msg: string, type?: 'success' | 'error') => void
+) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    notify("Por favor, selecione apenas arquivos de imagem (PNG, JPG, JPEG, SVG, WEBP).", "error");
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    notify("Logotipo muito grande! Limite de 2MB para upload direto pelo navegador.", "error");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    if (event.target?.result && typeof event.target.result === 'string') {
+      callback(event.target.result);
+      notify("Logotipo carregado com sucesso!", "success");
+    }
+  };
+  reader.onerror = () => {
+    notify("Erro ao ler o arquivo local.", "error");
+  };
+  reader.readAsDataURL(file);
+};
+
 export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<'budget-maker' | 'dashboard' | 'services' | 'clients' | 'team' | 'admin'>('budget-maker');
@@ -21,6 +58,7 @@ export default function App() {
 
   // Authentication State
   const [user, setUser] = useState<User | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -53,6 +91,15 @@ export default function App() {
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [newWsName, setNewWsName] = useState('');
   const [newWsNiche, setNewWsNiche] = useState('Construção Civil & Reforma');
+  const [newWsCnpj, setNewWsCnpj] = useState('');
+  const [newWsPhone, setNewWsPhone] = useState('');
+  const [newWsEmail, setNewWsEmail] = useState('');
+  const [newWsAddress, setNewWsAddress] = useState('');
+  const [newWsLogoUrl, setNewWsLogoUrl] = useState('');
+  const [newWsBrandColor, setNewWsBrandColor] = useState('#3b82f6');
+  const [newWsPixKey, setNewWsPixKey] = useState('');
+  const [newWsInitialServiceName, setNewWsInitialServiceName] = useState('');
+  const [newWsInitialServicePrice, setNewWsInitialServicePrice] = useState(150);
   const [wsMembers, setWsMembers] = useState<any[]>([]);
 
   // Budget State
@@ -103,11 +150,27 @@ export default function App() {
     phone: '',
     email: '',
     address: '',
+    cnpj: '',
+    logoUrl: '',
     brandColor: '#3b82f6',
     pixKey: ''
   });
 
   // Services Catalog advanced additions states
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmLabel?: string;
+    isDanger?: boolean;
+  }>({
+    isOpen: false,
+    title: 'Confirmar Ação',
+    message: '',
+    onConfirm: () => {},
+  });
+
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [newServiceCategory, setNewServiceCategory] = useState<string>('Serviço');
   const [newServiceCode, setNewServiceCode] = useState<string>('');
@@ -123,12 +186,16 @@ export default function App() {
   const [onboardingPlan, setOnboardingPlan] = useState<PlanType | null>(null);
   const [onboardingForm, setOnboardingForm] = useState({
     name: 'Solares Soluções Corporativas',
+    cnpj: '12.345.678/0001-99',
     niche: 'Eletricista & Automação',
     phone: '(11) 98765-4321',
     email: 'comercial@solaresenergia.com.br',
     address: 'Av. Paulista, 1000 - São Paulo, SP',
-    brandColor: '#eab308',
-    pixKey: 'financeiro@solaresenergia.com.br'
+    brandColor: '#3b82f6',
+    pixKey: 'financeiro@solaresenergia.com.br',
+    logoUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=eng',
+    initialServiceName: 'Manutenção de Instalações Comerciais',
+    initialServicePrice: 180
   });
   const [onboardingTeam, setOnboardingTeam] = useState<{name: string, email: string, role: UserRole}[]>([]);
   const [newOnboardingMember, setNewOnboardingMember] = useState({ name: '', email: '', role: UserRole.MEMBER });
@@ -241,6 +308,8 @@ export default function App() {
         }
       } catch (err) {
         console.error("Erro carregando sessão inicial:", err);
+      } finally {
+        setSessionLoaded(true);
       }
     }
     initSession();
@@ -271,7 +340,9 @@ export default function App() {
         email: activeWorkspace.email || '',
         address: activeWorkspace.address || '',
         brandColor: activeWorkspace.brandColor || '#3b82f6',
-        pixKey: activeWorkspace.pixKey || ''
+        pixKey: activeWorkspace.pixKey || '',
+        cnpj: activeWorkspace.cnpj || '',
+        logoUrl: activeWorkspace.logoUrl || ''
       });
     }
   }, [activeWorkspace]);
@@ -331,6 +402,20 @@ export default function App() {
     }
   };
 
+  // Logout Action
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error("Erro na comunicação para logout:", err);
+    }
+    setUser(null);
+    setActiveWorkspace(null);
+    setWorkspaces([]);
+    setBudgets([]);
+    showNotification("Você foi desconectado com sucesso.");
+  };
+
   // Register New Account with Token Action
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -352,8 +437,27 @@ export default function App() {
       }
       if (data.success) {
         setUser(data.user);
-        setActiveWorkspace(data.workspace);
-        showNotification("Conta criada e ativada com sucesso! Bem-vindo ao OrçaFlow.");
+        
+        // Trigger onboarding to let them configure their company properly
+        setOnboardingPlan(data.user.plan || 'BUSINESS');
+        setIsOnboarding(true);
+        setOnboardingStep(2); // Start at step 2 to input company profile directly
+
+        setOnboardingForm({
+          name: '',
+          cnpj: '',
+          niche: 'Eletricista & Automação',
+          phone: '',
+          email: data.user.email || '',
+          address: '',
+          brandColor: '#3b82f6',
+          pixKey: '',
+          logoUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(regName)}`,
+          initialServiceName: '',
+          initialServicePrice: 150
+        });
+
+        showNotification("Conta criada e ativada! Preencha os dados da sua empresa abaixo.", "success");
 
         // Clean values
         setRegName('');
@@ -362,14 +466,11 @@ export default function App() {
         setRegToken('');
         setAuthMode('login');
 
-        // Refresh lists
-        const wsRes = await fetch('/api/workspaces');
-        const wsData = await wsRes.json();
-        setWorkspaces(wsData);
-
-        const bRes = await fetch('/api/budgets');
-        const bData = await bRes.json();
-        setBudgets(bData);
+        // Initial setup arrays
+        setWorkspaces([]);
+        setActiveWorkspace(null);
+        setBudgets([]);
+        setServices([]);
       }
     } catch (err) {
       showNotification("Erro ao processar ativação de conta.", "error");
@@ -403,21 +504,55 @@ export default function App() {
   // Create workspace action
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newWsName.trim()) return;
+    if (!newWsName.trim()) {
+      showNotification("Por favor, informe o nome ou Razão Social da empresa.", "error");
+      return;
+    }
     try {
       const res = await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newWsName, niche: newWsNiche })
+        body: JSON.stringify({ 
+          name: newWsName, 
+          niche: newWsNiche,
+          phone: newWsPhone,
+          email: newWsEmail,
+          address: newWsAddress,
+          cnpj: newWsCnpj,
+          logoUrl: newWsLogoUrl,
+          brandColor: newWsBrandColor,
+          pixKey: newWsPixKey,
+          initialServiceName: newWsInitialServiceName,
+          initialServicePrice: newWsInitialServicePrice
+        })
       });
       const data = await res.json();
       if (res.ok) {
         setWorkspaces(prev => [...prev, data]);
         setActiveWorkspace(data);
+
+        // Fetch custom services to see the seeded custom service right away
+        const sRes = await fetch(`/api/workspaces/${data.id}/services`);
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          setServices(sData);
+        } else {
+          setServices([]);
+        }
+
         setBudgets([]);
-        setServices([]);
         setIsCreatingWorkspace(false);
+        // Clear variables
         setNewWsName('');
+        setNewWsCnpj('');
+        setNewWsPhone('');
+        setNewWsEmail('');
+        setNewWsAddress('');
+        setNewWsLogoUrl('');
+        setNewWsBrandColor('#3b82f6');
+        setNewWsPixKey('');
+        setNewWsInitialServiceName('');
+        setNewWsInitialServicePrice(150);
         showNotification(`Empresa "${data.name}" registrada no OrçaFlow!`);
       }
     } catch(err) {
@@ -490,21 +625,30 @@ export default function App() {
   // Client Deletion Action
   const handleDeleteClient = async (clientName: string) => {
     if (!activeWorkspace) return;
-    if (!window.confirm(`Deseja realmente remover o cliente "${clientName}" e todos os orçamentos vinculados? Esta ação é irreversível.`)) return;
-    try {
-      const res = await fetch(`/api/workspaces/${activeWorkspace.id}/clients/${encodeURIComponent(clientName)}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        setClientsList(prev => prev.filter(c => c.name !== clientName));
-        setBudgets(prev => prev.filter(b => b.clientName !== clientName));
-        showNotification(`Cliente "${clientName}" excluído com sucesso!`);
-      } else {
-        showNotification("Não foi possível excluir o cliente.", "error");
+    setConfirmModal({
+      isOpen: true,
+      title: "Remover Cliente",
+      message: `Deseja realmente remover o cliente "${clientName}" e todos os orçamentos vinculados? Esta ação é irreversível.`,
+      confirmLabel: "Remover Cliente",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/workspaces/${activeWorkspace.id}/clients/${encodeURIComponent(clientName)}`, {
+            method: 'DELETE'
+          });
+          if (res.ok) {
+            setClientsList(prev => prev.filter(c => c.name !== clientName));
+            setBudgets(prev => prev.filter(b => b.clientName !== clientName));
+            showNotification(`Cliente "${clientName}" excluído com sucesso!`);
+          } else {
+            showNotification("Não foi possível excluir o cliente.", "error");
+          }
+        } catch (err) {
+          showNotification("Erro ao remover cliente.", "error");
+        }
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
-    } catch (err) {
-      showNotification("Erro ao remover cliente.", "error");
-    }
+    });
   };
 
   // Client Creation Action from Clients management page
@@ -545,56 +689,68 @@ export default function App() {
 
   // Delete single SaaS user (Superadmin exclusive)
   const handleDeleteSaaSUser = async (userId: string, email: string) => {
-    if (!window.confirm(`Deseja realmente EXCLUIR o usuário ${email}? Todos os seus dados, workspaces e orçamentos serão removidos permanentemente.`)) {
-      return;
-    }
-    try {
-      const res = await fetch(`/api/saas/users/${userId}`, {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showNotification(data.message || "Usuário excluído com sucesso!");
-        // Refresh SaaS admin data
-        const adminRes = await fetch('/api/saas/admin');
-        if (adminRes.ok) {
-          const adminData = await adminRes.json();
-          setSaasAdminData(adminData);
+    setConfirmModal({
+      isOpen: true,
+      title: "Excluir Usuário",
+      message: `Deseja realmente EXCLUIR o usuário ${email}? Todos os seus dados, workspaces e orçamentos serão removidos permanentemente.`,
+      confirmLabel: "Excluir Usuário permanentemente",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/saas/users/${userId}`, {
+            method: 'DELETE'
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showNotification(data.message || "Usuário excluído com sucesso!");
+            // Refresh SaaS admin data
+            const adminRes = await fetch('/api/saas/admin');
+            if (adminRes.ok) {
+              const adminData = await adminRes.json();
+              setSaasAdminData(adminData);
+            }
+          } else {
+            showNotification(data.error || "Erro ao excluir usuário.", "error");
+          }
+        } catch (err) {
+          showNotification("Não foi possível excluir o usuário.", "error");
         }
-      } else {
-        showNotification(data.error || "Erro ao excluir usuário.", "error");
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
-    } catch (err) {
-      showNotification("Não foi possível excluir o usuário.", "error");
-    }
+    });
   };
 
   // Bulk delete all users (Superadmin exclusive)
   const handleDeleteAllSaaSUsers = async () => {
-    const confirmText1 = "CRÍTICO! Deseja realmente excluir TODOS os usuários cadastrados e seus respectivos workspaces e orçamentos?";
-    const confirmText2 = "Esta operação é irreversível e excluirá em massa todas as contas exceto os Administradores Master. CONFIRMA?";
-    if (!window.confirm(confirmText1) || !window.confirm(confirmText2)) {
-      return;
-    }
-    try {
-      const res = await fetch('/api/saas/users-all', {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showNotification(data.message || "Todos os usuários foram excluídos em massa!");
-        // Refresh SaaS admin data
-        const adminRes = await fetch('/api/saas/admin');
-        if (adminRes.ok) {
-          const adminData = await adminRes.json();
-          setSaasAdminData(adminData);
+    setConfirmModal({
+      isOpen: true,
+      title: "⚠️ CRÍTICO: Excluir TODOS os Usuários",
+      message: "ATENÇÃO! Esta operação é altamente crítica e irreversível. Deseja realmente excluir TODOS os usuários cadastrados e seus respectivos workspaces e orçamentos em massa (exceto Administradores Master)?",
+      confirmLabel: "Sim, EXCLUIR TODOS",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch('/api/saas/users-all', {
+            method: 'DELETE'
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showNotification(data.message || "Todos os usuários foram excluídos em massa!");
+            // Refresh SaaS admin data
+            const adminRes = await fetch('/api/saas/admin');
+            if (adminRes.ok) {
+              const adminData = await adminRes.json();
+              setSaasAdminData(adminData);
+            }
+          } else {
+            showNotification(data.error || "Erro na exclusão em massa.", "error");
+          }
+        } catch (err) {
+          showNotification("Não foi possível realizar a exclusão em massa.", "error");
         }
-      } else {
-        showNotification(data.error || "Erro na exclusão em massa.", "error");
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
-    } catch (err) {
-      showNotification("Não foi possível realizar a exclusão em massa.", "error");
-    }
+    });
   };
 
   // Create SaaS activation token action (Superadmin exclusive)
@@ -627,20 +783,29 @@ export default function App() {
 
   // Revoke SaaS Token action (Superadmin exclusive)
   const handleDeleteToken = async (tokenId: string) => {
-    if (!window.confirm("Deseja realmente revogar e excluir este Token de Ativação comercial?")) return;
-    try {
-      const res = await fetch(`/api/saas/tokens/${tokenId}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        setSaasTokens(prev => prev.filter(t => t.id !== tokenId));
-        showNotification("Token revogado e excluído com sucesso.");
-      } else {
-        showNotification("Falha ao remover o token escolhido.", "error");
+    setConfirmModal({
+      isOpen: true,
+      title: "Revogar Token Comercial",
+      message: "Deseja realmente revogar e excluir este Token de Ativação comercial?",
+      confirmLabel: "Revogar Token",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/saas/tokens/${tokenId}`, {
+            method: 'DELETE'
+          });
+          if (res.ok) {
+            setSaasTokens(prev => prev.filter(t => t.id !== tokenId));
+            showNotification("Token revogado e excluído com sucesso.");
+          } else {
+            showNotification("Falha ao remover the token escolhido.", "error");
+          }
+        } catch (err) {
+          showNotification("Erro na conexão com o servidor.", "error");
+        }
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
-    } catch (err) {
-      showNotification("Erro na conexão com o servidor.", "error");
-    }
+    });
   };
 
   // Save/Update Workspace data (Pix, Colors, Address etc)
@@ -920,6 +1085,183 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
     window.print();
   };
 
+  if (!sessionLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col justify-center items-center pb-12">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs text-slate-400 font-mono tracking-widest font-semibold animate-pulse">CARREGANDO ORÇAFLOW...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col justify-center items-center py-8 px-4 relative selection:bg-blue-500 selection:text-white">
+        {/* Dynamic Popups/Notifications */}
+        {notification && (
+          <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-xl border animate-fade-in text-xs font-semibold ${
+            notification.type === 'success' 
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+              : 'bg-red-50 text-red-800 border-red-200'
+          }`}>
+            {notification.type === 'success' ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-red-600" />}
+            <span>{notification.message}</span>
+          </div>
+        )}
+
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+        
+        <div className="max-w-md w-full text-center space-y-6 z-10">
+          {/* Logo */}
+          <div className="flex flex-col items-center gap-2">
+            <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-lg shadow-blue-500/20">
+              <RefreshCw className="w-8 h-8 text-indigo-100 animate-spin" style={{ animationDuration: '6s' }} />
+            </div>
+            <div>
+              <span className="font-display font-extrabold text-2xl tracking-tight text-white flex items-center justify-center gap-0.5">
+                Orça<span className="text-blue-500">Flow</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono tracking-widest uppercase">SaaS Enterprise</span>
+            </div>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl relative space-y-6 animate-fade-in text-slate-100">
+            <div className="space-y-1.5">
+              <h3 className="font-display font-black text-white text-lg">Portal de Acesso OrçaFlow</h3>
+              <p className="text-xs text-slate-400">
+                {authMode === 'login' 
+                  ? 'Digite seu e-mail e senha para gerenciar suas empresas e orçamentos.' 
+                  : 'Preencha o cadastro usando seu Token de Ativação comercial.'}
+              </p>
+            </div>
+
+            {/* Mode Selectors */}
+            <div className="grid grid-cols-2 gap-1.5 p-1.5 bg-slate-950 rounded-xl text-[11px] font-semibold">
+              <button
+                type="button"
+                onClick={() => setAuthMode('login')}
+                className={`py-2 px-3 rounded-lg transition-all ${
+                  authMode === 'login' 
+                    ? 'bg-blue-600 text-white shadow-sm font-bold' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Logar na Conta
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode('register')}
+                className={`py-2 px-3 rounded-lg transition-all ${
+                  authMode === 'register' 
+                    ? 'bg-blue-600 text-white shadow-sm font-bold' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Ativar Token
+              </button>
+            </div>
+
+            {authMode === 'login' ? (
+              <form onSubmit={handleLogin} className="space-y-3">
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">E-mail Corporativo</label>
+                  <input
+                    type="email"
+                    placeholder="Ex: seunome@servicos.com"
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-3 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Senha de Acesso</label>
+                  <input
+                    type="password"
+                    placeholder="Sua senha secreta"
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-3 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold p-3 rounded-xl shadow-lg shadow-blue-600/10 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {authLoading ? 'Verificando...' : 'Entrar no Painel'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister} className="space-y-3 text-slate-100">
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Seu Nome / Nome Comercial</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Victor Mendes"
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-3 text-slate-100 placeholder:text-slate-650 focus:outline-none focus:border-blue-500 transition-colors"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">E-mail para Registro</label>
+                  <input
+                    type="email"
+                    placeholder="Ex: joao@eletricista.com"
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-3 text-slate-101 placeholder:text-slate-650 focus:outline-none focus:border-blue-500 transition-colors"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Escolha uma Senha</label>
+                  <input
+                    type="password"
+                    placeholder="Senha de pelo menos 6 dígitos"
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-3 text-slate-101 placeholder:text-slate-650 focus:outline-none focus:border-blue-500 transition-colors"
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Token de Ativação SaaS</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: ORCA-XXXX-XX"
+                    className="w-full bg-slate-950 border border-orange-500/30 text-xs rounded-xl p-3 text-slate-101 placeholder:text-slate-650 focus:outline-none focus:border-blue-500 font-mono tracking-wider text-center"
+                    value={regToken}
+                    onChange={(e) => setRegToken(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold p-3 rounded-xl shadow-lg shadow-blue-600/10 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {authLoading ? 'Validando Token...' : 'Criar e Ativar Conta'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isOnboarding) {
     const brandPresets = [
       { name: "Amarelo Luz (Eletro/Solar)", hex: "#eab308", class: "bg-yellow-500 border-yellow-500", text: "text-yellow-500" },
@@ -945,7 +1287,11 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
             email: onboardingForm.email,
             address: onboardingForm.address,
             brandColor: onboardingForm.brandColor,
-            pixKey: onboardingForm.pixKey
+            pixKey: onboardingForm.pixKey,
+            cnpj: onboardingForm.cnpj,
+            logoUrl: onboardingForm.logoUrl,
+            initialServiceName: onboardingForm.initialServiceName,
+            initialServicePrice: onboardingForm.initialServicePrice
           })
         });
         const savedWs = await res.json();
@@ -956,6 +1302,13 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
           const wsData = await wsRes.json();
           setWorkspaces(wsData);
           setActiveWorkspace(savedWs);
+
+          // Get services catalog to see the newly seeded technical service
+          const sRes = await fetch(`/api/workspaces/${savedWs.id}/services`);
+          if (sRes.ok) {
+            const sData = await sRes.json();
+            setServices(sData);
+          }
 
           // Add members if any configured
           for (const member of onboardingTeam) {
@@ -1073,31 +1426,60 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
               </div>
               
               <div className="grid grid-cols-1 gap-3.5 text-left font-sans">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Razão Social / Nome de Exibição Comercial *</label>
-                  <input
-                    type="text"
-                    className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-blue-500 placeholder:text-slate-600 transition"
-                    placeholder="Ex: Solares Soluções Corporativas Ltda"
-                    value={onboardingForm.name}
-                    onChange={(e) => setOnboardingForm(prev => ({ ...prev, name: e.target.value }))}
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Razão Social / Nome de Exibição Comercial *</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-blue-500 placeholder:text-slate-600 transition"
+                      placeholder="Ex: Solares Soluções Corporativas Ltda"
+                      value={onboardingForm.name}
+                      onChange={(e) => setOnboardingForm(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">CNPJ da Empresa</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-blue-500 placeholder:text-slate-500 transition font-mono"
+                      placeholder="Ex: 00.000.000/0001-00"
+                      value={onboardingForm.cnpj || ''}
+                      onChange={(e) => setOnboardingForm(prev => ({ ...prev, cnpj: formatCNPJ(e.target.value) }))}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Nicho / Setor de Atuação *</label>
-                  <select
-                    className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-blue-500 transition"
+                  <input
+                    type="text"
+                    required
+                    className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-blue-500 transition placeholder:text-slate-600"
+                    placeholder="Digite livremente seu nicho (Ex: Montador de Móveis, Marquee Técnico...)"
                     value={onboardingForm.niche}
                     onChange={(e) => setOnboardingForm(prev => ({ ...prev, niche: e.target.value }))}
-                  >
-                    <option value="Eletricista & Automação">⚡ Eletricista & Automação</option>
-                    <option value="Construção Civil & Reforma">🏢 Construção Civil & Reforma</option>
-                    <option value="Design & Agência Digital">💻 Design & Agência Digital</option>
-                    <option value="Hidráulica & Encanamentos">🚰 Hidráulica & Encanamentos</option>
-                    <option value="Instalações & Climatização">❄️ Instalações & Climatização</option>
-                    <option value="TI, Consultoria & Programação">🚀 TI, Consultoria & Programação</option>
-                  </select>
+                  />
+                  <div className="flex flex-wrap gap-1.5 pt-1.5">
+                    <span className="text-[9px] text-slate-500 font-mono self-center mr-1">Sugestões:</span>
+                    {[
+                      { label: "⚡ Elétrica", value: "Eletricista & Automação" },
+                      { label: "🏢 Obras/Refor.", value: "Construção Civil & Reforma" },
+                      { label: "💻 Design/TI", value: "Design & Agência Digital" },
+                      { label: "🚰 Encanador", value: "Hidráulica & Encanamentos" },
+                      { label: "❄️ Climatiz.", value: "Instalações & Climatização" },
+                      { label: "🚗 Automotivo", value: "Estética Automotiva" }
+                    ].map(sug => (
+                      <button
+                        key={sug.value}
+                        type="button"
+                        onClick={() => setOnboardingForm(prev => ({ ...prev, niche: sug.value }))}
+                        className="text-[9px] bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 border border-slate-800 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                      >
+                        {sug.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1209,6 +1591,85 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
                     onChange={(e) => setOnboardingForm(prev => ({ ...prev, pixKey: e.target.value }))}
                   />
                 </div>
+
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Logotipo da Empresa (Upload ou URL ou Preset)</label>
+                  <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                    Faça upload de um arquivo direto do seu computador ou informe um link de imagem público.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row gap-2 pb-1">
+                    <label className="flex-1 bg-[#1e293b]/50 hover:bg-[#1e293b]/80 border border-dashed border-slate-700 hover:border-blue-500 rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition text-slate-300 text-xs text-center font-medium">
+                      <span>📤 Fazer Upload do Computador (PNG, JPG)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleLogoLocalUpload(e, (b64) => setOnboardingForm(prev => ({ ...prev, logoUrl: b64 })), showNotification)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex gap-3 items-center">
+                    <input
+                      type="text"
+                      className="flex-1 bg-slate-950 border border-slate-800 text-xs text-slate-100 p-3 rounded-xl focus:outline-none focus:border-blue-500 placeholder:text-slate-600 transition"
+                      placeholder="https://exemplo.com/seu-logo.png"
+                      value={onboardingForm.logoUrl?.startsWith('data:') ? 'Logotipo carregado localmente (Codificado)' : onboardingForm.logoUrl || ''}
+                      onChange={(e) => setOnboardingForm(prev => ({ ...prev, logoUrl: e.target.value }))}
+                      disabled={onboardingForm.logoUrl?.startsWith('data:')}
+                    />
+                    {onboardingForm.logoUrl && (
+                      <div className="w-12 h-12 bg-white border border-slate-800 rounded-xl flex items-center justify-center p-1.5 overflow-hidden shrink-0 relative group">
+                        <img 
+                          src={onboardingForm.logoUrl} 
+                          alt="Previsualização" 
+                          className="max-w-full max-h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setOnboardingForm(prev => ({ ...prev, logoUrl: '' }))}
+                          className="absolute inset-0 bg-red-600/95 text-white font-bold text-[9px] uppercase items-center justify-center opacity-0 group-hover:opacity-100 flex transition rounded-xl cursor-pointer"
+                          title="Remover logotipo"
+                        >
+                          Apagar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 items-center mt-2.5">
+                    <span className="text-[9px] text-slate-400 uppercase font-mono mr-1">Outras opções rápidas:</span>
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingForm(prev => ({ ...prev, logoUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=elétrica' }))}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition"
+                    >
+                      ⚡ Elétrica
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingForm(prev => ({ ...prev, logoUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=estrutura' }))}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition"
+                    >
+                      🛠️ Obras
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingForm(prev => ({ ...prev, logoUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=eng' }))}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition"
+                    >
+                      📐 Reformas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingForm(prev => ({ ...prev, logoUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=digital' }))}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition"
+                    >
+                      💻 Geral / TI
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="flex gap-3 pt-2 font-sans">
@@ -1235,11 +1696,43 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
             <div className="space-y-4 animate-fade-in text-slate-200 text-left">
               <div>
                 <h3 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
-                  <UserPlus className="w-4 h-4 text-blue-400" /> Cadastre os Membros da sua Equipe
+                  <UserPlus className="w-4 h-4 text-blue-400" /> Catalogação e Equipe Corporativa
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-1 font-sans">
-                  Pronto para faturar com multiempresa e multi-tenant? Atribua papéis adicionais no OrçaFlow para outros técnicos e analistas.
+                  Configure seu primeiro serviço no catálogo corporativo e adicione colaboradores extras para emitir propostas colaborativas.
                 </p>
+              </div>
+
+              {/* Startup Catalog Service Seeding */}
+              <div className="bg-slate-950/60 p-4 border border-blue-500/10 rounded-2xl space-y-3 shadow shadow-blue-500/5 font-sans">
+                <h4 className="font-semibold text-xs text-blue-450 text-blue-400 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-500" /> Cadastre o Primeiro Serviço do seu Catálogo *
+                </h4>
+                <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
+                  Defina um serviço principal de maior demanda. Ele será automaticamente registrado em seu portfólio no OrçaFlow.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Descrição do Serviço Técnico *</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl text-white outline-none focus:border-blue-500 transition placeholder:text-slate-600"
+                      placeholder="Ex: Instalação e Configuração de Inversores Solares"
+                      value={onboardingForm.initialServiceName || ''}
+                      onChange={(e) => setOnboardingForm(prev => ({ ...prev, initialServiceName: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Preço de tabela (R$ / Fixo ou Estimado) *</label>
+                    <input
+                      type="number"
+                      className="w-full bg-slate-950 border border-slate-800 text-xs p-3 rounded-xl text-white outline-none focus:border-blue-500 transition placeholder:text-slate-600"
+                      placeholder="Ex: 350"
+                      value={onboardingForm.initialServicePrice}
+                      onChange={(e) => setOnboardingForm(prev => ({ ...prev, initialServicePrice: parseFloat(e.target.value) || 0 }))}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-3 font-sans">
@@ -1355,13 +1848,25 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
               </div>
 
               <div className="bg-slate-950/70 p-4 border border-slate-850 rounded-2xl text-left space-y-2.5 text-xs">
-                <span className="text-[10px] text-slate-450 uppercase font-bold block tracking-wider">Perfil Consolidado do Faturamento:</span>
+                <span className="text-[10px] text-slate-400 uppercase font-bold block tracking-wider">Perfil Consolidado do Faturamento:</span>
                 <div className="space-y-1.5 text-slate-300 leading-relaxed font-sans">
                   <p>🏢 <b>Empresa Emitente:</b> {onboardingForm.name}</p>
+                  {onboardingForm.cnpj && <p>📄 <b>CNPJ Oficial:</b> <span className="font-mono">{onboardingForm.cnpj}</span></p>}
                   <p>💼 <b>Setor / Niche de Atuação:</b> {onboardingForm.niche}</p>
                   <p>📱 <b>WhatsApp de Atendimento:</b> {onboardingForm.phone}</p>
                   <p>🤝 <b>Pix Comercial Ativado:</b> <code>{onboardingForm.pixKey || "Chave padrão do sistema"}</code></p>
-                  <p>👥 <b>Colaboradores Vinculados:</b> {onboardingTeam.length === 0 ? 'Somente o Proprietário' : `${onboardingTeam.length} membros convidados`}</p>
+                  {onboardingForm.logoUrl && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="text-slate-350">🖼️ <b>Logotipo Vinculado:</b></span>
+                      <img src={onboardingForm.logoUrl} alt="Logo" className="w-8 h-8 rounded bg-white object-contain p-0.5" referrerPolicy="no-referrer" />
+                    </div>
+                  )}
+                  {onboardingForm.initialServiceName && (
+                    <p className="mt-1 bg-slate-900 border border-slate-800 p-2 rounded-lg text-[11px] text-blue-400">
+                      ⚡ <b>Serviço Inicial do Catálogo:</b> {onboardingForm.initialServiceName} (R$ {onboardingForm.initialServicePrice})
+                    </p>
+                  )}
+                  <p className="mt-1">👥 <b>Colaboradores Vinculados:</b> {onboardingTeam.length === 0 ? 'Somente o Proprietário' : `${onboardingTeam.length} membros convidados`}</p>
                 </div>
               </div>
 
@@ -1541,44 +2046,17 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
             </button>
           </div>
 
-          {isCreatingWorkspace ? (
-            <form onSubmit={handleCreateWorkspace} className="space-y-2 pt-1 animate-fade-in">
-              <input
-                type="text"
-                placeholder="Título da sua Empresa"
-                className="w-full bg-slate-800 border border-slate-700 text-slate-100 text-xs px-2 py-1 rounded focus:outline-none"
-                value={newWsName}
-                onChange={(e) => setNewWsName(e.target.value)}
-                autoFocus
-              />
-              <select
-                className="w-full bg-slate-800 border border-slate-700 text-slate-100 text-xs px-2 py-1 rounded focus:outline-none"
-                value={newWsNiche}
-                onChange={(e) => setNewWsNiche(e.target.value)}
-              >
-                <option value="Eletricista & Automação">🛠️ Eletr. / Automação</option>
-                <option value="Construção Civil & Reforma">🏢 Constr. / Pintor</option>
-                <option value="Design & Agência Digital">💻 Design / Freelance</option>
-                <option value="Hidráulica & Encanamentos">🚰 Encanador</option>
-              </select>
-              <div className="flex gap-1 justify-end">
-                <button type="submit" className="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded">Salvar</button>
-                <button type="button" onClick={() => setIsCreatingWorkspace(false)} className="bg-slate-700 text-slate-300 text-[10px] px-2 py-0.5 rounded">Cancelar</button>
-              </div>
-            </form>
-          ) : (
-            <div className="relative">
-              <select
-                className="w-full bg-slate-800 border border-slate-700 text-slate-100 text-xs px-2.5 py-1.5 rounded-lg focus:outline-none font-medium"
-                value={activeWorkspace?.id || ''}
-                onChange={(e) => handleSelectWorkspace(e.target.value)}
-              >
-                {workspaces.map(ws => (
-                  <option key={ws.id} value={ws.id}>{ws.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="relative">
+            <select
+              className="w-full bg-slate-800 border border-slate-700 text-slate-100 text-xs px-2.5 py-1.5 rounded-lg focus:outline-none font-medium outline-none cursor-pointer"
+              value={activeWorkspace?.id || ''}
+              onChange={(e) => handleSelectWorkspace(e.target.value)}
+            >
+              {workspaces.map(ws => (
+                <option key={ws.id} value={ws.id}>{ws.name}</option>
+              ))}
+            </select>
+          </div>
 
           {activeWorkspace && (
             <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1.5 rounded-md">
@@ -1658,14 +2136,24 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
 
         {/* User Status Bottom Card */}
         <div className="p-4 border-t border-slate-800 bg-slate-950 flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs uppercase text-blue-400 border border-slate-700">
-              {user?.name.slice(0, 2) || "CO"}
+          <div className="flex items-center justify-between gap-1">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs uppercase text-blue-400 border border-slate-700 shrink-0">
+                {user?.name.slice(0, 2) || "CO"}
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-xs font-semibold truncate text-white">{user?.name || "Prestador Autônomo"}</p>
+                <p className="text-[10px] text-slate-400 truncate">{user?.email || "anonimo@empresa.com"}</p>
+              </div>
             </div>
-            <div className="overflow-hidden">
-              <p className="text-xs font-semibold truncate text-white">{user?.name || "Prestador Autônomo"}</p>
-              <p className="text-[10px] text-slate-400 truncate">{user?.email || "anonimo@empresa.com"}</p>
-            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-450 hover:text-red-400 transition cursor-pointer shrink-0 flex items-center justify-center gap-1 text-[10.5px] font-bold hover:border hover:border-red-500/20"
+              title="Deslogar da Conta"
+            >
+              <LogOut className="w-3.5 h-3.5 text-slate-400 hover:text-red-400" />
+              <span>Sair</span>
+            </button>
           </div>
           <div className="bg-slate-900 rounded-lg p-2 flex justify-between items-center border border-slate-850">
             <span className="text-[9px] uppercase font-bold text-slate-400">Plano Atual:</span>
@@ -1677,9 +2165,9 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
       {/* Main Content Area */}
       <main className="flex-1 overflow-x-hidden p-4 md:p-8 space-y-6">
         
-        {/* INLINE LOGIN MODIFIER fallback / Simple User Identity Switch */}
-        {/* INLINE LOGIN MODIFIER fallback / Simple User Identity Switch */}
-        {!user && (
+        {/* INLINE LOGIN MODIFIER fallback disabled / Gated at App Root */}
+        {/* INLINE LOGIN MODIFIER fallback disabled / Gated at App Root */}
+        {false && (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl flex flex-col gap-4 text-center max-w-sm ml-auto mr-auto shadow-xl animate-fade-in text-slate-900 dark:text-slate-100">
             <div className="p-3 bg-blue-50 dark:bg-blue-500/10 rounded-full w-12 h-12 ml-auto mr-auto flex items-center justify-center">
               <LogIn className="w-6 h-6 text-blue-600 dark:text-blue-400" />
@@ -1813,16 +2301,6 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
                 </button>
               </form>
             )}
-
-            {/* Helpful instructions for superadmin testing */}
-            <div className="mt-2 p-3 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-900/50 rounded-lg text-left">
-              <span className="text-[9.5px] uppercase font-mono font-bold text-violet-750 dark:text-violet-300 block mb-1">👑 Painel Administrador Master:</span>
-              <p className="text-[10.5px] text-violet-800 dark:text-violet-200 leading-normal font-medium">
-                Para gerenciar usuários, criar planos e liberar tokens de inscrição, logue como Victor:<br />
-                <strong>E-mail:</strong> <span className="font-mono font-bold text-slate-900 dark:text-white">vitorxl38@gmail.com</span><br />
-                <strong>Senha:</strong> <span className="font-mono font-bold text-slate-900 dark:text-white">vitor123</span>
-              </p>
-            </div>
           </div>
         )}
 
@@ -2159,16 +2637,35 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
                   </div>
 
                   <div className="space-y-2 pt-2 border-t border-slate-200/55 dark:border-slate-800/60">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-350 block">Logotipo da Empresa (URL da Imagem)</label>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-350 block">Logotipo da Empresa (Upload ou URL da Imagem)</label>
+                    <label className="w-full bg-slate-100 dark:bg-slate-900 hover:bg-slate-250 dark:hover:bg-slate-850 border border-dashed border-slate-300 dark:border-slate-800 hover:border-blue-500 rounded-lg p-2.5 flex items-center justify-center gap-1.5 cursor-pointer transition text-slate-600 dark:text-slate-300 text-[11.5px] text-center font-medium">
+                      <span>📤 Carregar Logotipo do Computador (PNG, JPG)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleLogoLocalUpload(e, (b64) => handleUpdateWorkspaceMetadata({ logoUrl: b64 }), showNotification)}
+                      />
+                    </label>
                     <input 
                       type="text"
-                      value={activeWorkspace?.logoUrl || ''} 
+                      value={activeWorkspace?.logoUrl?.startsWith('data:') ? 'Logotipo carregado localmente (Codificado)' : activeWorkspace?.logoUrl || ''} 
                       onChange={(e) => handleUpdateWorkspaceMetadata({ logoUrl: e.target.value })}
                       placeholder="https://exemplo.com/logo.png"
+                      disabled={activeWorkspace?.logoUrl?.startsWith('data:')}
                       className="w-full text-xs p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder-slate-450 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
+                    {activeWorkspace?.logoUrl?.startsWith('data:') && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateWorkspaceMetadata({ logoUrl: '' })}
+                        className="w-full text-[10px] bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-950/30 text-red-600 dark:text-red-400 font-bold py-1.5 px-3 rounded border border-red-200 dark:border-red-900/30 transition cursor-pointer"
+                      >
+                        Remover Logotipo Local
+                      </button>
+                    )}
                     <div className="flex flex-wrap gap-1.5 items-center mt-1.5">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold mr-1">Inserir Presets:</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold mr-1 font-mono">Presets:</span>
                       <button 
                         type="button"
                         onClick={() => handleUpdateWorkspaceMetadata({ logoUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=eng' })}
@@ -2242,6 +2739,7 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
                     <div>
                       <p className="text-slate-400 text-[10px]">PRESTADOR DE SERVIÇOS</p>
                       <p className="font-semibold">{activeWorkspace?.name || 'Vendedor'}</p>
+                      {activeWorkspace?.cnpj && <p className="text-slate-600 font-mono text-[9.5px]">CNPJ: {activeWorkspace.cnpj}</p>}
                       <p className="text-slate-500">{activeWorkspace?.phone || '(11) 99999-9999'}</p>
                       <p className="text-slate-500 truncate">{activeWorkspace?.email}</p>
                     </div>
@@ -3017,6 +3515,16 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
                     />
                   </div>
                   <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">CNPJ da Empresa</label>
+                    <input
+                      type="text"
+                      className="w-full bg-[#0B1220] border border-[#1E293B] text-xs rounded-lg p-3 text-white placeholder-[#94A3B8] outline-none font-mono"
+                      placeholder="Ex: 00.000.000/0001-00"
+                      value={workspaceForm.cnpj || ''}
+                      onChange={(e) => setWorkspaceForm({ ...workspaceForm, cnpj: formatCNPJ(e.target.value) })}
+                    />
+                  </div>
+                  <div className="space-y-1">
                     <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">E-mail de Contato Comercial</label>
                     <input
                       type="email"
@@ -3045,6 +3553,43 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
                       value={workspaceForm.address}
                       onChange={(e) => setWorkspaceForm({ ...workspaceForm, address: e.target.value })}
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Logotipo da Empresa (Upload ou URL)</label>
+                    <div className="space-y-2">
+                      <label className="w-full bg-[#040811] hover:bg-[#1e293b]/30 border border-dashed border-[#1E293B] hover:border-blue-500 rounded-lg p-2 flex items-center justify-center gap-1.5 cursor-pointer transition text-slate-400 text-[11px] text-center font-medium">
+                        <span>📤 Upload do Computador (PNG, JPG)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleLogoLocalUpload(e, (b64) => setWorkspaceForm({ ...workspaceForm, logoUrl: b64 }), showNotification)}
+                        />
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          className="flex-1 bg-[#0B1220] border border-[#1E293B] text-xs rounded-lg p-3 text-white placeholder-[#94A3B8] outline-none"
+                          placeholder="https://exemplo.com/logo.png"
+                          value={workspaceForm.logoUrl?.startsWith('data:') ? 'Logotipo carregado localmente (Codificado)' : workspaceForm.logoUrl || ''}
+                          onChange={(e) => setWorkspaceForm({ ...workspaceForm, logoUrl: e.target.value })}
+                          disabled={workspaceForm.logoUrl?.startsWith('data:')}
+                        />
+                        {workspaceForm.logoUrl && (
+                          <div className="w-11 h-11 bg-white border border-[#1E293B] rounded-lg p-1 flex items-center justify-center shrink-0 overflow-hidden relative group">
+                            <img src={workspaceForm.logoUrl} alt="Preview" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
+                            <button
+                              type="button"
+                              onClick={() => setWorkspaceForm({ ...workspaceForm, logoUrl: '' })}
+                              className="absolute inset-0 bg-red-600/95 text-white font-bold text-[8px] uppercase items-center justify-center opacity-0 group-hover:opacity-100 flex transition rounded-lg cursor-pointer"
+                              title="Remover logotipo"
+                            >
+                              Apagar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 pb-2">
                     <div className="space-y-1">
@@ -3388,6 +3933,290 @@ Qualquer dúvida, estamos à disposição no WhatsApp.`;
             </div>
           </div>
         )}
+
+      {/* GLOBAL CONFIRMATION MODAL */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 text-slate-100 shadow-2xl space-y-5 animate-fade-in">
+            <div className="flex gap-3.5 items-start">
+              <div className={`p-2.5 rounded-2xl shrink-0 ${confirmModal.isDanger ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
+                <ShieldAlert className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="space-y-1.5 min-w-0">
+                <h3 className="font-display font-bold text-base text-white">{confirmModal.title}</h3>
+                <p className="text-xs text-slate-300 leading-relaxed font-sans">{confirmModal.message}</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                className="w-full bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold py-2.5 px-4 rounded-xl transition cursor-pointer text-center"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className={`w-full text-white text-xs font-bold py-2.5 px-4 rounded-xl transition cursor-pointer text-center ${
+                  confirmModal.isDanger 
+                    ? 'bg-rose-600 hover:bg-rose-500 shadow-lg' 
+                    : 'bg-blue-600 hover:bg-blue-500 shadow-lg'
+                }`}
+              >
+                {confirmModal.confirmLabel || 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE WORKSPACE MODAL OVERLAY */}
+      {isCreatingWorkspace && (
+        <div className="fixed inset-0 z-[90] bg-[#020617]/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0f172a] border border-slate-800 rounded-3xl max-w-2xl w-full p-6 text-slate-200 shadow-2xl relative space-y-4 animate-fade-in my-8">
+            <button 
+              type="button"
+              onClick={() => setIsCreatingWorkspace(false)}
+              className="absolute top-4 right-4 text-slate-405 text-slate-400 hover:text-slate-200 text-xs font-bold bg-slate-800 hover:bg-slate-700 rounded-full w-7 h-7 flex items-center justify-center cursor-pointer"
+            >
+              ✖
+            </button>
+            <div className="border-b border-slate-800 pb-3 text-left">
+              <h3 className="font-display font-bold text-base text-white flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-blue-500" /> Cadastrar Nova Empresa Parceira
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Preencha os dados estruturados da nova empresa para faturar com multiempresa, gerar PDFs personalizados e configurar o Pix imediato.</p>
+            </div>
+            
+            <form onSubmit={handleCreateWorkspace} className="space-y-4 text-left font-sans text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-450 text-slate-450 uppercase font-bold block tracking-wider">Razão Social / Nome de Exibição *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full bg-[#040811] border border-slate-800 rounded-xl p-3 text-slate-100 placeholder:text-slate-650 focus:outline-[#3b82f6]"
+                    placeholder="Ex: Solares Soluções Elétricas Ltda"
+                    value={newWsName}
+                    onChange={(e) => setNewWsName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-450 uppercase font-bold block tracking-wider">CNPJ da Empresa</label>
+                  <input
+                    type="text"
+                    className="w-full bg-[#040811] border border-slate-800 rounded-xl p-3 text-slate-100 placeholder:text-slate-500 font-mono focus:outline-[#3b82f6]"
+                    placeholder="Ex: 00.000.000/0001-00"
+                    value={newWsCnpj}
+                    onChange={(e) => setNewWsCnpj(formatCNPJ(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-450 uppercase font-bold block tracking-wider">Nicho / Setor de Atuação *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full bg-[#040811] border border-slate-800 rounded-xl p-3 text-slate-100 placeholder:text-slate-600 focus:outline-[#3b82f6]"
+                    placeholder="Ex: Montador de Móveis, Marceneiro, Manutenção, etc."
+                    value={newWsNiche}
+                    onChange={(e) => setNewWsNiche(e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {['⚡ Elétrica', '🏢 Obras & Reformas', '💻 Design & TI', '🔧 Técnica & Climatização'].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setNewWsNiche(preset)}
+                        className="text-[9px] bg-slate-900 border border-slate-800/80 hover:bg-slate-850 text-slate-400 hover:text-slate-205 px-2.5 py-0.5 rounded transition cursor-pointer font-sans"
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-450 uppercase font-bold block tracking-wider">WhatsApp de Contato Comercial</label>
+                  <input
+                    type="text"
+                    className="w-full bg-[#040811] border border-slate-800 rounded-xl p-3 text-slate-100 placeholder:text-slate-650 focus:outline-none"
+                    placeholder="Ex: (11) 98765-4321"
+                    value={newWsPhone}
+                    onChange={(e) => setNewWsPhone(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-455 text-slate-450 uppercase font-bold block tracking-wider">E-mail Comercial Oficial</label>
+                  <input
+                    type="email"
+                    className="w-full bg-[#040811] border border-slate-800 rounded-xl p-3 text-slate-100 placeholder:text-slate-650 focus:outline-none"
+                    placeholder="Ex: comercial@suaempresa.com"
+                    value={newWsEmail}
+                    onChange={(e) => setNewWsEmail(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-450 uppercase font-bold block tracking-wider">Endereço da Sede Comercial</label>
+                  <input
+                    type="text"
+                    className="w-full bg-[#040811] border border-slate-800 rounded-xl p-3 text-slate-100 placeholder:text-slate-650 focus:outline-none"
+                    placeholder="Ex: Alameda Santos, 1000 - São Paulo, SP"
+                    value={newWsAddress}
+                    onChange={(e) => setNewWsAddress(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-455 text-slate-455 text-slate-400 uppercase font-bold block tracking-wider">Chave Pix Comercial</label>
+                  <input
+                    type="text"
+                    className="w-full bg-[#040811] border border-slate-800 rounded-xl p-3 text-slate-100 placeholder:text-slate-600 font-mono focus:outline-none"
+                    placeholder="Chave Pix (Ex: CNPJ ou contato@email.com)"
+                    value={newWsPixKey}
+                    onChange={(e) => setNewWsPixKey(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[#94A3B8] uppercase font-bold block tracking-wider">Identidade Cromática (Cor de Marca)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      className="w-11 h-11 bg-[#040811] border border-slate-800 rounded-xl cursor-pointer p-1 shrink-0"
+                      value={newWsBrandColor}
+                      onChange={(e) => setNewWsBrandColor(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      className="flex-1 bg-[#040811] border border-slate-800 rounded-xl p-2.5 text-slate-100 font-mono focus:outline-none"
+                      value={newWsBrandColor}
+                      onChange={(e) => setNewWsBrandColor(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-400 uppercase font-bold block tracking-wider">Logotipo da Empresa (Upload ou URL ou Preset)</label>
+                <div className="space-y-2">
+                  <label className="w-full bg-[#040811] hover:bg-[#1e293b]/35 border border-dashed border-slate-800 hover:border-blue-500 rounded-xl p-2.5 flex items-center justify-center gap-1.5 cursor-pointer transition text-slate-400 text-[11px] text-center font-medium font-sans">
+                    <span>📤 Fazer Upload do Computador (PNG, JPG)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleLogoLocalUpload(e, (b64) => setNewWsLogoUrl(b64), showNotification)}
+                    />
+                  </label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      className="flex-1 bg-[#040811] border border-slate-800 rounded-xl p-3 text-slate-100 placeholder:text-slate-655 focus:outline-none font-sans"
+                      placeholder="https://exemplo.com/logo.png"
+                      value={newWsLogoUrl?.startsWith('data:') ? 'Logotipo carregado localmente (Codificado)' : newWsLogoUrl || ''}
+                      onChange={(e) => setNewWsLogoUrl(e.target.value)}
+                      disabled={newWsLogoUrl?.startsWith('data:')}
+                    />
+                    {newWsLogoUrl && (
+                      <div className="w-11 h-11 bg-white border border-slate-800 rounded-xl flex items-center justify-center p-1 overflow-hidden shrink-0 relative group">
+                        <img src={newWsLogoUrl} alt="Preview" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
+                        <button
+                          type="button"
+                          onClick={() => setNewWsLogoUrl('')}
+                          className="absolute inset-0 bg-red-600/95 text-white font-bold text-[8px] uppercase items-center justify-center opacity-0 group-hover:opacity-100 flex transition rounded-xl cursor-pointer"
+                          title="Remover logotipo"
+                        >
+                          Apagar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 items-center mt-1.5 font-sans">
+                  <span className="text-[9px] text-[#94A3B8] uppercase font-mono mr-1 font-bold">Presets:</span>
+                  <button
+                    type="button"
+                    onClick={() => setNewWsLogoUrl('https://api.dicebear.com/7.x/identicon/svg?seed=elétrica')}
+                    className="text-[9px] bg-slate-800 hover:bg-slate-705 text-slate-200 px-2.5 py-1 rounded transition cursor-pointer"
+                  >
+                    ⚡ Elétrica
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewWsLogoUrl('https://api.dicebear.com/7.x/identicon/svg?seed=eng')}
+                    className="text-[9px] bg-slate-800 hover:bg-slate-705 text-slate-200 px-2.5 py-1 rounded transition cursor-pointer"
+                  >
+                    🛠️ Obras
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewWsLogoUrl('https://api.dicebear.com/7.x/identicon/svg?seed=digital')}
+                    className="text-[9px] bg-slate-800 hover:bg-slate-705 text-slate-200 px-2.5 py-1 rounded transition cursor-pointer"
+                  >
+                    💻 TI/Consultoria
+                  </button>
+                </div>
+              </div>
+
+              {/* Advanced instant catalog service seeding */}
+              <div className="bg-blue-950/10 border-l-4 border-blue-500 p-4 rounded-r-2xl space-y-2 mt-2">
+                <span className="text-[10.5px] text-blue-400 uppercase font-bold block tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-blue-400" /> Cadastrar Primeiro Serviço do Catálogo *
+                </span>
+                <p className="text-[10px] text-slate-450 leading-relaxed font-sans">
+                  Insira abaixo o seu serviço principal mais oferecido aos clientes. Ele será preenchido automaticamente como o primeiro item do seu catálogo profissional.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-[#91A3B8] font-bold block">Descrição do Serviço técnico principais *</label>
+                    <input
+                      type="text"
+                      className="w-full bg-[#040811] border border-slate-800 rounded-xl p-2.5 text-slate-100 placeholder:text-slate-600 focus:outline-[#3b82f6]"
+                      placeholder="Ex: Instalação Comercial e Cabos"
+                      value={newWsInitialServiceName}
+                      onChange={(e) => setNewWsInitialServiceName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-[#91A3B8] font-bold block">Preço Cobrado Sugerido (R$) *</label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#040811] border border-slate-800 rounded-xl p-2.5 text-slate-100 placeholder:text-slate-600 focus:outline-[#3b82f6]"
+                      placeholder="Ex: 250"
+                      value={newWsInitialServicePrice || ''}
+                      onChange={(e) => setNewWsInitialServicePrice(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingWorkspace(false)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-2.5 px-4 rounded-xl transition text-center cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-4 rounded-xl transition text-center flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+                >
+                  <CheckCircle className="w-4 h-4" /> Registrar Empresa Parceira
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       </main>
       

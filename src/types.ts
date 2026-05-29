@@ -45,6 +45,7 @@ export interface Workspace {
   phone?: string;
   email?: string;
   address?: string;
+  cnpj?: string; // Company CNPJ registration
   logoUrl?: string; // custom logo
   brandColor?: string; // primary visual color picker (e.g. #3b82f6)
   pixKey?: string; // PIX key for QR generator
