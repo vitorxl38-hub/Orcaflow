@@ -1,0 +1,113 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Space Grotesk", sans-serif;
+
+  --color-slate-750: #1e293b;
+  --color-slate-850: #0b1220;
+}
+
+body {
+  background-color: #f8fafc;
+  font-family: var(--font-sans);
+  color: #0f172a;
+}
+
+/* Core Input, Textarea, and Select premium dark styles as requested */
+input[type="text"],
+input[type="email"],
+input[type="number"],
+input[type="password"],
+input[type="tel"],
+input[type="url"],
+input:not([type]),
+textarea,
+select {
+  background: #0B1220 !important;
+  color: #FFFFFF !important;
+  border: 1px solid #1E293B !important;
+  caret-color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+select option {
+  background-color: #0B1220 !important;
+  color: #FFFFFF !important;
+}
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder,
+input[type="number"]::placeholder,
+input[type="password"]::placeholder,
+input[type="tel"]::placeholder,
+input[type="url"]::placeholder,
+input:not([type])::placeholder,
+textarea::placeholder {
+  color: #94A3B8 !important;
+  opacity: 1 !important;
+}
+
+/* Custom Scrollbars for premium feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Signature Canvas Styling */
+.signature-canvas {
+  background-color: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 0.375rem;
+  cursor: crosshair;
+}
+
+/* Chrome/Safari Browser Autofill Text Compatibility Fixes */
+/* Default theme autofill elements */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: #FFFFFF !important;
+  caret-color: #FFFFFF;
+  transition: background-color 999999s ease-in-out 0s;
+  box-shadow: 0 0 0px 1000px #0B1220 inset !important; /* matches premium dark background */
+}
+
+/* Dark Autofill theme elements */
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover, 
+.dark input:-webkit-autofill:focus,
+.dark input:-webkit-autofill:active {
+  -webkit-text-fill-color: #FFFFFF !important;
+  caret-color: #FFFFFF;
+  transition: background-color 999999s ease-in-out 0s;
+  box-shadow: 0 0 0px 1000px #0B1220 inset !important; /* matches premium dark background */
+}
+
+

@@ -1,0 +1,6 @@
+{
+  "name": "OrçaFlow",
+  "description": "Plataforma SaaS para geração rápida e inteligente de orçamentos profissionais para prestadores de serviços de todos os nichos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
